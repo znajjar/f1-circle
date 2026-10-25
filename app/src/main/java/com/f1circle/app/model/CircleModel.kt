@@ -154,12 +154,21 @@ class CircleModel(private val data: SessionData, private val useGaps: Boolean = 
         val fr = fractionsAt(now, maxPace = if (status == TrackStatus.GREEN) 1.25 else 3.0)
         val tRef = referenceLap(now, leader)
 
-        /** A car is where the leader was [GapSample.gap] seconds ago. */
+        /**
+         * A car is where the leader was [GapSample.gap] seconds ago. Right after joining a live
+         * session the leader may not have been timed yet, so any timed car ahead will do instead.
+         */
         fun viaLeader(d: Int, gap: GapSample?): Double? {
-            if (!useGaps || leader == null || d == leader || gap?.gap == null || now - gap.timeMs > 20_000) return null
-            val la = anchors[leader] ?: return null
-            if (lastAtOrBefore(la.times, now) < 0) return null
-            return progressAt(la, now - (gap.gap * 1000).toLong(), now, fr, tRef)
+            val g = gap?.gap
+            if (!useGaps || leader == null || d == leader || g == null || now - gap.timeMs > 20_000) return null
+            var best: Pair<Anchors, Double>? = null
+            for ((j, aj) in anchors) {
+                if (j == d || lastAtOrBefore(aj.times, now) < 0) continue
+                val gj = if (j == leader) 0.0 else latestGap(j, now)?.takeIf { now - it.timeMs <= 20_000 }?.gap ?: continue
+                if (gj <= g && (best == null || gj < best.second)) best = aj to gj
+            }
+            val (ref, refGap) = best ?: return null
+            return progressAt(ref, now - ((g - refGap) * 1000).toLong(), now, fr, tRef)
         }
 
         val cars = data.drivers.mapNotNull { driver ->
@@ -286,9 +295,14 @@ class CircleModel(private val data: SessionData, private val useGaps: Boolean = 
 
     // ---- session-wide state at a moment ----
 
+    /** Sector-line positions from laps run before a live session was joined, if any. */
+    private val priorFractions: Fractions? = data.priorSectorTimes.takeIf { it.isNotEmpty() }?.let { laps ->
+        Fractions(median(laps.map { it[0] / it.sum() }), median(laps.map { (it[0] + it[1]) / it.sum() }))
+    }
+
     private fun fractionsAt(now: Long, maxPace: Double): Fractions {
         val n = lastAtOrBefore(greenLapEnds, now) + 1
-        if (n == 0) return Fractions(1 / 3.0, 2 / 3.0, maxPace)
+        if (n == 0) return priorFractions?.let { Fractions(it.s2, it.s3, maxPace) } ?: Fractions(1 / 3.0, 2 / 3.0, maxPace)
         return Fractions(greenS2Prefix[n] / n, greenS3Prefix[n] / n, maxPace)
     }
 
@@ -298,6 +312,7 @@ class CircleModel(private val data: SessionData, private val useGaps: Boolean = 
         if (own.isNotEmpty()) return own.map { it.duration }.average()
         val n = lastAtOrBefore(greenLapEnds, now) + 1
         if (n > 0) return greenLaps.subList(maxOf(0, n - 5), n).map { it.duration }.average()
+        if (data.priorSectorTimes.isNotEmpty()) return median(data.priorSectorTimes.map { it.sum() })
         return data.laps.mapNotNull { it.duration }.minOrNull()?.times(1.03) ?: 90.0
     }
 

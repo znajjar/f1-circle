@@ -54,6 +54,11 @@ class SessionData(
     scheduledLaps: Int? = null,
     /** Live sessions know when the race actually started, even before any lap data arrives. */
     startedMs: Long? = null,
+    /**
+     * Sector times (S1, S2, S3) from laps run before a live session was joined. They have no
+     * timestamps, but tell the model the lap's shape and pace until it has timed laps of its own.
+     */
+    val priorSectorTimes: List<DoubleArray> = emptyList(),
 ) {
     val totalLaps: Int = scheduledLaps ?: laps.maxOfOrNull { it.number } ?: 0
     val raceStartMs: Long = startedMs ?: laps.minOfOrNull { it.startMs } ?: session.startMs

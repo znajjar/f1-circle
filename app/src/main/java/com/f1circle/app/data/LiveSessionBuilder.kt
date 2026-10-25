@@ -30,6 +30,10 @@ class LiveSessionBuilder {
         var completed = 0
         val laps = TreeMap<Int, LapBuilder>()
         var inPitSince: Long? = null
+        /** Sector times from the connect snapshot, for the lap that was under way when we joined. */
+        var joinedSectors: List<Double?>? = null
+        /** The same, kept for the whole session as a hint about the lap's shape. */
+        var priorSectors: DoubleArray? = null
         fun lap(n: Int) = laps.getOrPut(n) { LapBuilder(n) }
     }
 
@@ -78,6 +82,7 @@ class LiveSessionBuilder {
             statuses = statuses.toList(),
             scheduledLaps = totalLaps,
             startedMs = startedMs ?: (Long.MAX_VALUE / 4),
+            priorSectorTimes = states.values.mapNotNull { it.priorSectors },
         )
     }
 
@@ -170,8 +175,18 @@ class LiveSessionBuilder {
             if (live && n > st.completed) {
                 // Crossed the line: lap n is done and lap n+1 starts now
                 st.lap(n + 1).startMs = t
+                st.joinedSectors = null
             }
             st.completed = maxOf(st.completed, n)
+        }
+
+        if (!live) {
+            o.opt("Sectors")?.let { sectors ->
+                val values = arrayOfNulls<Double>(3)
+                forEachIndexed(sectors) { i, sec -> if (i < 3) values[i] = sec.optString("Value").toDoubleOrNull() }
+                st.joinedSectors = values.toList()
+                if (values.all { it != null }) st.priorSectors = DoubleArray(3) { values[it]!! }
+            }
         }
 
         if (live) {
@@ -209,6 +224,7 @@ class LiveSessionBuilder {
         val lap = when (i) {
             0 -> st.lap(st.completed + 1).takeIf { it.s1 == null }
             1 -> st.laps.descendingMap().values.firstOrNull { it.s1 != null && it.s2 == null }
+                ?: joinedLap(st)
             2 -> st.laps.descendingMap().values.firstOrNull { it.s2 != null && it.s3 == null }
             else -> null
         } ?: return
@@ -222,6 +238,20 @@ class LiveSessionBuilder {
             val elapsed = listOfNotNull(lap.s1, lap.s2.takeIf { i >= 1 }, lap.s3.takeIf { i >= 2 }).sum()
             lap.startMs = t - (elapsed * 1000).toLong()
         }
+    }
+
+    /**
+     * A car reaching S2 on the lap that was under way when we joined crossed S1 before we connected,
+     * so the S1 time in the snapshot belongs to this lap; with it, the S2 crossing becomes a usable
+     * anchor instead of waiting up to a lap for the next line crossing.
+     */
+    private fun joinedLap(st: DriverState): LapBuilder? {
+        val s1 = st.joinedSectors?.getOrNull(0) ?: return null
+        val lap = st.lap(st.completed + 1)
+        if (lap.s1 != null || lap.startMs != null) return null
+        lap.s1 = s1
+        st.joinedSectors = null
+        return lap
     }
 
     private fun addStatus(t: Long, s: TrackStatus) {
