@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A lap with one car on it. The ring breaks around the car rather than
+     painting a red halo, so the same shape works as the themed (monochrome) icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M70.80,47.55 A18,18 0 1,1 60.45,37.20"
+        android:strokeWidth="4.5"
+        android:strokeColor="#FFFFFF" />
+    <path
+        android:pathData="M61.73,41.27 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
+        android:fillColor="#FFFFFF" />
+</vector>
