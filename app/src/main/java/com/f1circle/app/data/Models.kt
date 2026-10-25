@@ -50,8 +50,12 @@ class SessionData(
     val positions: List<PositionSample>,
     val pits: List<PitStop>,
     val statuses: List<StatusChange>,
+    /** Live sessions know the scheduled distance before it has been driven. */
+    scheduledLaps: Int? = null,
+    /** Live sessions know when the race actually started, even before any lap data arrives. */
+    startedMs: Long? = null,
 ) {
-    val totalLaps: Int = laps.maxOfOrNull { it.number } ?: 0
-    val raceStartMs: Long = laps.minOfOrNull { it.startMs } ?: session.startMs
+    val totalLaps: Int = scheduledLaps ?: laps.maxOfOrNull { it.number } ?: 0
+    val raceStartMs: Long = startedMs ?: laps.minOfOrNull { it.startMs } ?: session.startMs
     val raceEndMs: Long = laps.mapNotNull { it.endMs }.maxOrNull() ?: raceStartMs
 }

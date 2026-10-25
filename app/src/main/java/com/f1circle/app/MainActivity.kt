@@ -25,6 +25,7 @@ import com.f1circle.app.data.OpenF1Client
 import com.f1circle.app.data.RaceSession
 import com.f1circle.app.data.SessionData
 import com.f1circle.app.model.CircleModel
+import com.f1circle.app.ui.LiveScreen
 import com.f1circle.app.ui.LoadingScreen
 import com.f1circle.app.ui.ReplayScreen
 import com.f1circle.app.ui.SessionPicker
@@ -61,6 +62,7 @@ private fun App() {
     var picked by remember { mutableStateOf<RaceSession?>(null) }
     var step by remember { mutableStateOf("") }
     var loaded by remember { mutableStateOf<Loaded?>(null) }
+    var live by remember { mutableStateOf(false) }
 
     LaunchedEffect(year, listAttempt) {
         sessions = null
@@ -86,15 +88,20 @@ private fun App() {
         }
     }
 
-    BackHandler(enabled = picked != null) {
+    BackHandler(enabled = picked != null || live) {
         picked = null
         loaded = null
+        live = false
     }
 
     val current = loaded
     val session = picked
     when {
-        session == null -> SessionPicker(year, sessions, listError, onYear = { year = it }, onPick = { picked = it }, onRetry = { listAttempt++ })
+        live -> LiveScreen(onBack = { live = false })
+        session == null -> SessionPicker(
+            year, sessions, listError,
+            onYear = { year = it }, onPick = { picked = it }, onRetry = { listAttempt++ }, onLive = { live = true },
+        )
         current == null -> LoadingScreen(session, step)
         else -> ReplayScreen(current.data, current.model, onBack = {
             picked = null

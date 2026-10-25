@@ -154,17 +154,31 @@ class CircleModel(private val data: SessionData, private val useGaps: Boolean = 
         val fr = fractionsAt(now, maxPace = if (status == TrackStatus.GREEN) 1.25 else 3.0)
         val tRef = referenceLap(now, leader)
 
+        /** A car is where the leader was [GapSample.gap] seconds ago. */
+        fun viaLeader(d: Int, gap: GapSample?): Double? {
+            if (!useGaps || leader == null || d == leader || gap?.gap == null || now - gap.timeMs > 20_000) return null
+            val la = anchors[leader] ?: return null
+            if (lastAtOrBefore(la.times, now) < 0) return null
+            return progressAt(la, now - (gap.gap * 1000).toLong(), now, fr, tRef)
+        }
+
         val cars = data.drivers.mapNotNull { driver ->
             val d = driver.number
-            val a = anchors[d] ?: return@mapNotNull null
+            val a = anchors[d]
             val position = positionAt(d, now)
             val gap = latestGap(d, now)
-            val kNow = lastAtOrBefore(a.times, now)
+            val kNow = if (a == null) -1 else lastAtOrBefore(a.times, now)
+            val inPit = data.pits.any { it.driver == d && now in it.entryMs..it.exitMs }
 
-            if (kNow < 0) {
-                // On the grid: stagger cars just behind the line
-                return@mapNotNull CarState(driver, -0.004 * (position ?: 20), position, gap?.gap, gap?.lapsBehind ?: 0,
-                    inPit = false, stopped = false, finished = false)
+            if (a == null || kNow < 0) {
+                if (now < data.raceStartMs) {
+                    // On the grid: stagger cars just behind the line
+                    return@mapNotNull CarState(driver, -0.004 * (position ?: 20), position, gap?.gap, gap?.lapsBehind ?: 0,
+                        inPit = false, stopped = false, finished = false)
+                }
+                // Joined a live session part-way: until this car crosses a timing line, its gap is all we have
+                val p = viaLeader(d, gap) ?: return@mapNotNull null
+                return@mapNotNull CarState(driver, p, position, gap?.gap, gap?.lapsBehind ?: 0, inPit, stopped = false, finished = false)
             }
 
             val finishAnchor = chequeredMs?.let { tc ->
@@ -175,17 +189,11 @@ class CircleModel(private val data: SessionData, private val useGaps: Boolean = 
                     gap?.lapsBehind ?: 0, inPit = false, stopped = false, finished = true)
             }
 
-            val inPit = data.pits.any { it.driver == d && now in it.entryMs..it.exitMs }
             val segment = (nextProgress(a, kNow, fr) - progressOf(a, kNow, fr)) * tRef * paceRatio(a, kNow, fr, tRef)
             val stopped = !inPit && status != TrackStatus.RED && (now - a.times[kNow]) / 1000.0 > maxOf(3 * segment, 60.0)
 
             var progress = progressAt(a, now, now, fr, tRef)
-            if (useGaps && leader != null && d != leader && !stopped && gap?.gap != null && now - gap.timeMs < 20_000) {
-                anchors[leader]?.let { la ->
-                    val viaLeader = progressAt(la, now - (gap.gap * 1000).toLong(), now, fr, tRef)
-                    if (abs(viaLeader - progress) < 0.3) progress = viaLeader
-                }
-            }
+            if (!stopped) viaLeader(d, gap)?.let { if (abs(it - progress) < 0.3) progress = it }
             CarState(driver, progress, position, gap?.gap, gap?.lapsBehind ?: 0, inPit, stopped, finished = false)
         }
 

@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -40,10 +42,27 @@ fun SessionPicker(
     onYear: (Int) -> Unit,
     onPick: (RaceSession) -> Unit,
     onRetry: () -> Unit,
+    onLive: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(Color(0xFF111111)).padding(16.dp)) {
         Text("F1 Circle", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-        Text("Pick a race to replay", color = Color(0xFF999999), fontSize = 14.sp)
+        Text("Follow a session live or pick a race to replay", color = Color(0xFF999999), fontSize = 14.sp)
+        Row(
+            Modifier
+                .padding(top = 12.dp)
+                .fillMaxWidth()
+                .background(Color(0xFF2A1215), RoundedCornerShape(10.dp))
+                .clickable(onClick = onLive)
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(10.dp).background(Color(0xFFE53935), CircleShape))
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                Text("Live timing", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text("Whatever session is running right now", color = Color(0xFFBBBBBB), fontSize = 13.sp)
+            }
+            Text("›", color = Color.White, fontSize = 22.sp)
+        }
         Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Years.forEach { y ->
                 val on = y == year

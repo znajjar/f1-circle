@@ -85,21 +85,41 @@ private class ReplayState(val model: CircleModel) {
 
     private fun update(realMs: Double, replayMs: Double, snap: Boolean) {
         val f = model.frame(clock)
-        val alpha = 1 - exp(-realMs / 180.0)
-        display = f.cars.associate { car ->
-            val target = car.progress
-            val prev = display[car.driver.number]
-            val moving = !car.stopped && !car.finished
-            val next = if (snap || prev == null || abs(target - prev) > 0.06) {
-                target
-            } else {
-                // Advance at reference pace, then ease out whatever error is left
-                val predicted = if (moving) prev + replayMs / 1000.0 / f.referenceLap else prev
-                predicted + (target - predicted) * alpha
-            }
-            car.driver.number to next
-        }
+        display = smoothProgress(display, f, realMs, replayMs, snap)
         frame = f
+    }
+}
+
+/**
+ * Eases each dot towards its newly computed position so it glides rather than jumps when fresh
+ * timing data lands. [raceMs] is how much race time passed during the last [realMs] of screen time.
+ */
+internal fun smoothProgress(prev: Map<Int, Double>, f: CircleFrame, realMs: Double, raceMs: Double, snap: Boolean): Map<Int, Double> {
+    val alpha = 1 - exp(-realMs / 180.0)
+    return f.cars.associate { car ->
+        val target = car.progress
+        val last = prev[car.driver.number]
+        val moving = !car.stopped && !car.finished
+        val next = if (snap || last == null || abs(target - last) > 0.06) {
+            target
+        } else {
+            // Advance at reference pace, then ease out whatever error is left
+            val predicted = if (moving) last + raceMs / 1000.0 / f.referenceLap else last
+            predicted + (target - predicted) * alpha
+        }
+        car.driver.number to next
+    }
+}
+
+/** Which drivers' labels are hidden, remembered by TLA so the choice carries across races. */
+@Composable
+internal fun rememberHiddenLabels(): Pair<Set<String>, (Set<String>) -> Unit> {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("display", Context.MODE_PRIVATE) }
+    var hidden by remember { mutableStateOf(prefs.getStringSet(HIDDEN_LABELS_KEY, null).orEmpty().toSet()) }
+    return hidden to { tlas ->
+        hidden = tlas
+        prefs.edit().putStringSet(HIDDEN_LABELS_KEY, tlas).apply()
     }
 }
 
@@ -109,14 +129,7 @@ fun ReplayScreen(data: SessionData, model: CircleModel, onBack: () -> Unit) {
     var selected by remember { mutableStateOf<Int?>(null) }
     var lossAdjust by remember { mutableDoubleStateOf(0.0) }
 
-    // Hidden labels are remembered by TLA so the choice carries across races and seasons
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("display", Context.MODE_PRIVATE) }
-    var hiddenTlas by remember { mutableStateOf(prefs.getStringSet(HIDDEN_LABELS_KEY, null).orEmpty().toSet()) }
-    fun setHidden(tlas: Set<String>) {
-        hiddenTlas = tlas
-        prefs.edit().putStringSet(HIDDEN_LABELS_KEY, tlas).apply()
-    }
+    val (hiddenTlas, setHidden) = rememberHiddenLabels()
 
     LaunchedEffect(state) {
         var last = 0L
@@ -137,7 +150,7 @@ fun ReplayScreen(data: SessionData, model: CircleModel, onBack: () -> Unit) {
             TextButton(onClick = onBack) { Text("‹ Races", color = Color(0xFFBBBBBB)) }
             Spacer(Modifier.weight(1f))
             Text("${data.session.country} · ${data.session.name}", color = Color.White, fontWeight = FontWeight.SemiBold)
-            LabelsMenu(data, hiddenTlas, ::setHidden)
+            LabelsMenu(data, hiddenTlas, setHidden)
         }
 
         // A fixed square: nothing below can move or resize the circle
@@ -228,7 +241,7 @@ private fun SpeedChip(speed: Float, highlighted: Boolean, onClick: () -> Unit) {
 
 /** Button in the top bar that opens a per-driver on/off list for the circle labels. */
 @Composable
-private fun LabelsMenu(data: SessionData, hidden: Set<String>, onChange: (Set<String>) -> Unit) {
+internal fun LabelsMenu(data: SessionData, hidden: Set<String>, onChange: (Set<String>) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
@@ -261,7 +274,7 @@ private fun LabelsMenu(data: SessionData, hidden: Set<String>, onChange: (Set<St
 }
 
 @Composable
-private fun PitPanel(
+internal fun PitPanel(
     frame: CircleFrame,
     tla: String?,
     window: PitWindow?,
@@ -278,9 +291,16 @@ private fun PitPanel(
             Text("$tla: no pit window right now", color = Color.White, fontSize = 14.sp)
             return@Column
         }
-        val between = listOfNotNull(window.carAhead?.driver?.tla, window.carBehind?.driver?.tla).joinToString(" and ")
+        val ahead = window.carAhead?.driver?.tla
+        val behind = window.carBehind?.driver?.tla
+        val where = when {
+            ahead != null && behind != null -> ", between $ahead and $behind"
+            ahead != null -> ", behind $ahead"
+            behind != null -> ", ahead of $behind"
+            else -> ""
+        }
         Text(
-            "$tla pits now → rejoins P${window.rejoinPosition}" + if (between.isNotEmpty()) ", between $between" else "",
+            "$tla pits now → rejoins P${window.rejoinPosition}$where",
             color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
