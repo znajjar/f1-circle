@@ -1,6 +1,14 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+// Release signing reads keystore.properties at the repo root (gitignored). Without it,
+// assembleRelease still builds but produces an unsigned APK.
+val keystoreProperties = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { file ->
+    Properties().apply { file.inputStream().use { load(it) } }
 }
 
 android {
@@ -15,24 +23,38 @@ android {
         versionName = "0.1"
     }
 
+    signingConfigs {
+        if (keystoreProperties != null) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.findByName("release")
+        }
+    }
+
     buildFeatures {
         compose = true
     }
 
-    testOptions {
-        unitTests.all { it.testLogging { showStandardStreams = true } }
-    }
+    // The circle drawing is shared with the desktop overlay by source, since Jetpack Compose and
+    // Compose Multiplatform have the same APIs but separate artifacts
+    sourceSets.getByName("main").kotlin.srcDir("../ui-shared/src")
 }
 
 dependencies {
+    implementation(project(":core"))
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.okhttp)
     debugImplementation(libs.androidx.compose.ui.tooling)
-    testImplementation(libs.junit)
-    // Android's built-in org.json is a stub in local unit tests
-    testImplementation(libs.org.json)
 }

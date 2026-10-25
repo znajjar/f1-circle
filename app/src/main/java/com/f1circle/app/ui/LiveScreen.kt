@@ -39,6 +39,7 @@ import com.f1circle.app.data.LiveTimingClient
 import com.f1circle.app.data.SessionData
 import com.f1circle.app.model.CircleFrame
 import com.f1circle.app.model.CircleModel
+import com.f1circle.app.model.smoothProgress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext

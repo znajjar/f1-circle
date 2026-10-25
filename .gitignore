@@ -5,3 +5,8 @@ local.properties
 .idea/
 *.iml
 *.mp4
+
+# Release signing (keystore lives outside the repo)
+keystore.properties
+*.jks
+*.keystore

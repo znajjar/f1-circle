@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "F1Circle"
-include(":app")
+include(":core", ":app", ":desktop")
